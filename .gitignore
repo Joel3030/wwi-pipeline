@@ -1,0 +1,20 @@
+# Backups de base de datos — pesados, no van a control de versiones
+*.bak
+*.trn
+*.mdf
+*.ldf
+*.ndf
+
+# Archivos locales de SSMS / Visual Studio
+*.user
+*.suo
+*.dtsx.user
+.vs/
+bin/
+obj/
+
+# Configuracion local y credenciales — nunca commitear
+*.local.json
+*.local.sql
+secrets*
+appsettings.Development.json
