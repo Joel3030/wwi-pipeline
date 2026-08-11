@@ -14,7 +14,14 @@ bin/
 obj/
 
 # Configuracion local y credenciales — nunca commitear
-*.local.json
-*.local.sql
+# Patrones amplios a proposito: cualquier archivo con "local" en el nombre queda
+# fuera. Un patron demasiado especifico (*.local.sql) ya dejo pasar un archivo
+# llamado "02_database_mail.local" que contenia una password.
+*.local
+*.local.*
+*local.sql
 secrets*
 appsettings.Development.json
+credentials*
+*.key
+*.pfx

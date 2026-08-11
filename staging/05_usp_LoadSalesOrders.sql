@@ -30,6 +30,8 @@ BEGIN
 
     DECLARE @BatchId    UNIQUEIDENTIFIER = NEWID();
     DECLARE @RowsLoaded INT;
+    DECLARE @BaselineRows INT;
+    DECLARE @Msg NVARCHAR(400);
 
     /*  El registro del arranque va FUERA de la transaccion: si estuviera adentro,
         el ROLLBACK lo borraria y las corridas fallidas no dejarian rastro.
@@ -82,6 +84,27 @@ BEGIN
         FROM WideWorldImporters.Sales.Orders;   -- tres partes: cruza el limite de la base
 
         SET @RowsLoaded = @@ROWCOUNT;   -- pegado al INSERT: cualquier statement intermedio lo pisa
+
+        SELECT @BaselineRows = AVG(RowsLoaded)
+        FROM (
+            SELECT TOP (5) RowsLoaded
+            FROM etl.LoadBatch
+            WHERE SchemaName = N'Sales'
+              AND TableName  = N'Orders'
+              AND Status     = N'Succeeded'
+              AND RowsLoaded IS NOT NULL
+            ORDER BY StartedAt DESC
+        ) AS h;
+        
+        IF @BaselineRows IS NOT NULL AND @RowsLoaded < @BaselineRows * 0.8
+        BEGIN
+            SET @Msg = CONCAT(
+                N'Caida de volumen en Sales.Orders: se cargaron ', @RowsLoaded,
+                N' filas contra una linea base de ', @BaselineRows,
+                N' (umbral 80%%). Carga revertida.');
+
+            THROW 50001, @Msg, 1;
+        END
 
         COMMIT TRANSACTION;
     END TRY
