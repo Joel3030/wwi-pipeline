@@ -35,13 +35,23 @@ BEGIN
 
     /*  Agregacion condicional: los cuatro conteos en UNA sola pasada por la tabla,
         en vez de cuatro SELECT COUNT(*) con WHERE.
-        Funciona porque COUNT(expresion) ignora los NULL: el CASE sin ELSE devuelve
-        NULL cuando la condicion no se cumple, y esas filas no se cuentan.          */
+
+        Se usa SUM(CASE ... ELSE 0) y no COUNT(CASE ... END), aunque ambas formas
+        son idiomaticas y dan el mismo resultado. La version con COUNT genera NULL
+        en cada fila que no cumple la condicion, y con ANSI_WARNINGS ON (el default)
+        eso hace que SQL Server emita el warning 8153 "Null value is eliminated by
+        an aggregate". Es inofensivo, pero se escribiria en el historial del Agent
+        Job en cada corrida nocturna, y el ruido permanente en logs operativos
+        entrena a la gente a ignorarlos. Con ELSE 0 no se generan nulos.
+
+        Nota: SUM sobre cero filas devuelve NULL (COUNT devolveria 0). El
+        WHERE AffectedRowCount > 0 del INSERT lo filtra igual, asi que no cambia
+        el comportamiento.                                                          */
     SELECT
-        @NullCustomerCount            = COUNT(CASE WHEN CustomerID          IS NULL THEN 1 END),
-        @NullSalespersonPersonIDCount = COUNT(CASE WHEN SalespersonPersonID IS NULL THEN 1 END),
-        @NullContactPersonIDCount     = COUNT(CASE WHEN ContactPersonID     IS NULL THEN 1 END),
-        @NullOrderDateCount           = COUNT(CASE WHEN OrderDate           IS NULL THEN 1 END)
+        @NullCustomerCount            = SUM(CASE WHEN CustomerID          IS NULL THEN 1 ELSE 0 END),
+        @NullSalespersonPersonIDCount = SUM(CASE WHEN SalespersonPersonID IS NULL THEN 1 ELSE 0 END),
+        @NullContactPersonIDCount     = SUM(CASE WHEN ContactPersonID     IS NULL THEN 1 ELSE 0 END),
+        @NullOrderDateCount           = SUM(CASE WHEN OrderDate           IS NULL THEN 1 ELSE 0 END)
     FROM Sales.Orders;
 
     /*  El chequeo de duplicados no entra en la pasada anterior porque necesita

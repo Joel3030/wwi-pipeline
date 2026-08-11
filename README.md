@@ -10,7 +10,7 @@ Sigue el patrón **medallion** (bronze / silver / gold):
 | Capa | Base de datos | Estado |
 |---|---|---|
 | **Producción** (OLTP) | `WideWorldImporters` | ✅ restaurada — nunca se modifica |
-| **Staging / bronze** | `WWI_Staging` | ✅ implementada |
+| **Staging / bronze** | `WWI_Staging` | ✅ implementada y automatizada |
 | **Resumen / gold** (esquema estrella) | pendiente | ⬜ |
 | **Dashboard** | Power BI | ⬜ |
 
@@ -20,7 +20,7 @@ El dashboard se conectará **únicamente** a la capa resumen. Nunca a staging ni
 
 1. ✅ Restaurar `WideWorldImporters` como fuente
 2. ✅ Esquema de staging + stored procedure de extracción con validaciones
-3. ⬜ Automatizar la extracción con un SQL Server Agent Job
+3. ✅ Automatizar la extracción con un SQL Server Agent Job (falta el alerting)
 4. ⬜ Capa resumen con lógica de negocio y esquema estrella
 5. ⬜ Automatizar la actualización de la capa resumen
 6. ⬜ Conectar el dashboard a la capa resumen
@@ -63,6 +63,17 @@ propios.
 Hardcodear el nombre de la base en referencias locales hace que una copia restaurada bajo
 otro nombre siga escribiendo en la original.
 
+### Timestamps en UTC
+Todas las columnas de fecha/hora de `etl.*` usan `SYSUTCDATETIME()`, es decir **UTC**.
+SQL Server Agent, en cambio, registra su historial en **hora local**. La misma corrida
+aparece con horas distintas en `etl.LoadBatch` y en `msdb.dbo.sysjobhistory` — tenerlo
+presente al correlacionar ambas fuentes.
+
+La razón de guardar en UTC es el horario de verano: un job programado a las 2 AM local se
+ejecuta dos veces el día que el reloj se atrasa y ninguna el día que se adelanta. Con
+timestamps locales eso produce corridas con hora duplicada o huecos inexplicables en el
+historial. UTC no tiene saltos.
+
 ### Carga completa (full load) e idempotente
 `TRUNCATE` + `INSERT`, envueltos en una transacción. Correr el procedure N veces siempre
 deja el snapshot actual del origen, sin acumular duplicados. La alternativa —carga
@@ -89,6 +100,8 @@ staging/
 ├── 03_tables.sql                    Sales.Orders, etl.ValidationLog, etl.LoadBatch
 ├── 04_usp_ValidateSalesOrders.sql   validaciones de calidad de datos
 └── 05_usp_LoadSalesOrders.sql       extracción desde producción
+automation/
+└── 01_job_load_sales_orders.sql     SQL Server Agent Job (diario 02:00 hora local)
 tests/
 └── negative_tests.sql               pruebas del camino de error
 ```
@@ -108,12 +121,32 @@ Los números indican **orden de ejecución**: `02_schemas` no puede correr antes
 :r 05_usp_LoadSalesOrders.sql
 ```
 
-Luego, para ejecutar una carga:
+Luego, para ejecutar una carga a mano:
 
 ```sql
 USE WWI_Staging;
 EXEC etl.usp_LoadSalesOrders;
 ```
+
+Para la automatización, ejecutar `automation/01_job_load_sales_orders.sql`. **Requiere que
+el servicio SQL Server Agent esté corriendo y en modo de inicio `Automatic`** — es un
+servicio de Windows separado del motor, y si está detenido el job nunca se ejecuta, sin
+error ni aviso. En Express Edition no existe: habría que orquestar con el Programador de
+tareas de Windows.
+
+```powershell
+Set-Service -Name SQLSERVERAGENT -StartupType Automatic
+Start-Service -Name SQLSERVERAGENT
+```
+
+Para dispararlo sin esperar al horario:
+
+```sql
+EXEC msdb.dbo.sp_start_job @job_name = N'WWI Staging - Load Sales.Orders';
+```
+
+`sp_start_job` es **asincrónico**: responde `Job started successfully` de inmediato, lo
+cual sólo significa que Agent aceptó la orden — no que el job haya terminado bien.
 
 ## Observabilidad
 
@@ -132,6 +165,22 @@ ORDER BY StartedAt DESC;
 ```
 
 Línea base actual: ~130 ms para 73.595 filas.
+
+El historial del Agent Job es una fuente complementaria, no redundante: sabe si el job
+llegó a ejecutarse (algo que `LoadBatch` no puede saber si el procedure nunca arrancó),
+pero mide duraciones en **segundos**, así que una carga de 156 ms figura como `0`.
+
+```sql
+SELECT TOP 10
+    h.run_date, h.run_time, h.run_duration,
+    CASE h.run_status WHEN 0 THEN 'Fallo' WHEN 1 THEN 'Exito'
+                      WHEN 2 THEN 'Reintento' WHEN 3 THEN 'Cancelado' END AS Estado,
+    h.message
+FROM msdb.dbo.sysjobhistory h
+JOIN msdb.dbo.sysjobs j ON j.job_id = h.job_id
+WHERE j.name = N'WWI Staging - Load Sales.Orders'
+ORDER BY h.instance_id DESC;
+```
 
 ## Pendiente conocido
 
