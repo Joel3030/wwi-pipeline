@@ -1,0 +1,31 @@
+# Normalizacion de finales de linea.
+#
+# El problema: Windows termina las lineas con CRLF y macOS/Linux con LF. Sin este
+# archivo, git guarda lo que le den. Un .sql creado en Windows entra al repo con
+# CRLF, y al abrirlo en la Mac git lo ve distinto en TODAS sus lineas: aparece
+# como modificado entero sin haberlo tocado, y cualquier diff real queda enterrado.
+#
+# text=auto le dice a git: guarda siempre LF en el repositorio, y al hacer
+# checkout entrega el final de linea nativo de cada plataforma. La normalizacion
+# ocurre al entrar y al salir, no en el disco de trabajo.
+*           text=auto
+
+# Explicito para los tipos que usa el proyecto. Redundante con text=auto, pero
+# documenta la intencion y protege si alguien cambia la regla general.
+*.sql       text
+*.md        text
+*.js        text
+*.json      text
+*.ps1       text
+
+# Binarios: git NUNCA debe tocarles los bytes. "Normalizar" un binario lo corrompe.
+# El .bak ademas esta en .gitignore (121 MB, supera el limite de GitHub), pero se
+# declara igual por si alguien lo fuerza con git add -f.
+*.bak       binary
+*.trn       binary
+*.mdf       binary
+*.ldf       binary
+*.ndf       binary
+*.png       binary
+*.jpg       binary
+*.pdf       binary
