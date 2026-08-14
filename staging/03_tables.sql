@@ -46,6 +46,45 @@ CREATE TABLE Sales.Orders (
 GO
 
 /* ---------------------------------------------------------------------------
+   Sales.OrderLines — copia espejada de WideWorldImporters.Sales.OrderLines
+
+   Mismo criterio que Sales.Orders: todo NULL-able, sin constraints, sin indices.
+   Staging captura lo que venga; validar es un paso posterior.
+
+   UnitPrice es NULL-able TAMBIEN en el origen — es la unica medida monetaria del
+   modelo y la fuente admite que falte. Un NULL aca no rompe nada: se propaga por
+   la multiplicacion (Quantity * NULL = NULL) y despues SUM lo ignora en silencio,
+   asi que el total sale mas chico sin ningun error. Por eso se valida aparte, y
+   por eso la capa resumen no puede aceptar NULL en una medida.
+
+   Description NO es una descripcion de la linea: es el nombre del producto
+   congelado al momento del pedido. El origen lo desnormaliza a proposito para que
+   un renombre posterior no altere pedidos historicos. Hoy coincide con
+   Warehouse.StockItems.StockItemName en las 231.412 filas — porque todavia no
+   renombraron nada, no porque la columna sobre.
+
+   Quantity es lo pedido; PickedQuantity es lo efectivamente despachado.
+--------------------------------------------------------------------------- */
+
+CREATE TABLE Sales.OrderLines (
+	OrderLineID					INT              NULL,
+	OrderID						INT              NULL,
+	StockItemID					INT              NULL,
+	Description					NVARCHAR(100)    NULL,
+	PackageTypeID				INT              NULL,
+	Quantity					INT              NULL,
+	UnitPrice					DECIMAL(18,2)    NULL,
+	TaxRate						DECIMAL(18,3)    NULL,
+	PickedQuantity				INT              NULL,
+	PickingCompletedWhen		DATETIME2		 NULL,
+	LastEditedBy				INT              NULL,
+	LastEditedWhen				DATETIME2        NULL,
+	LoadBatchId                 UNIQUEIDENTIFIER NOT NULL,
+	LoadedAt                    DATETIME2        NOT NULL DEFAULT SYSUTCDATETIME()
+);
+GO
+
+/* ---------------------------------------------------------------------------
    etl.ValidationLog — problemas de calidad detectados, por corrida
 
    Generica para toda la capa: SchemaName + TableName identifican que tabla se
