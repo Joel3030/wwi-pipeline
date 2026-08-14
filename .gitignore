@@ -25,3 +25,9 @@ appsettings.Development.json
 credentials*
 *.key
 *.pfx
+
+# Guia de estudio (docs/libro) — solo viajan las fuentes .md y el build.js.
+# El HTML pesa ~720 KB, se regenera con "node build.js" y cambia entero en cada
+# build: commitear salida generada vuelve los diffs ilegibles.
+node_modules/
+docs/libro/*.html
